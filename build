@@ -1,6 +1,6 @@
 dep ensure
 CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o downwardapi-injector .
-docker build --no-cache -t pmoncadaisla/downwardapi-injector:latest .
+docker build --no-cache -t pmoncadaisla/downwardapi-injector:1.0 .
 rm -rf downwardapi-injector
 
-docker push pmoncadaisla/downwardapi-injector:latest
+docker push pmoncadaisla/downwardapi-injector:1.0

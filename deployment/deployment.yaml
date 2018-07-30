@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: downwardapi-injector
-          image: pmoncadaisla/downwardapi-injector:latest
+          image: pmoncadaisla/downwardapi-injector:1.0
           imagePullPolicy: Always
           args:
             - -downwardapiCfgFile=/etc/webhook/config/downwardapiconfig.yaml
