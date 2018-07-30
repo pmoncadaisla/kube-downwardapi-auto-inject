@@ -138,7 +138,12 @@ namespaceSelector:
           operator: DoesNotExist
 ```
 
-or add label `downwardapi-injector-disabled=yes' to those namespaces you want to exlcude from the webhook.
+or add label `downwardapi-injector-disabled=yes` to those namespaces you want to exlcude from the webhook.
+
+## Customization
+
+You can customize the name of the environment variables and the volumes by editing the `deployment/configmap.yaml` file.
+
 
 ## Deploy your apps
 
@@ -262,7 +267,3 @@ spec:
         path: annotations
     name: podinfo
 ```
-
-## Customization
-
-You can customize the name of the environment variables and the volumes by editing the `deployment/configmap.yaml` file.
