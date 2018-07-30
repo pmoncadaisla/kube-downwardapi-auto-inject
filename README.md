@@ -2,7 +2,7 @@
 
 This project is strongly inspired in https://github.com/morvencao/kube-mutating-webhook-tutorial
 
-Inject POD information to contqainers using the [Kubernetes DownwardAPI](https://kubernetes.io/docs/tasks/inject-data-application/environment-variable-expose-pod-information/) automatically.
+Inject POD information to containers using the [Kubernetes DownwardAPI](https://kubernetes.io/docs/tasks/inject-data-application/environment-variable-expose-pod-information/) automatically.
 
 
 It will inject:
