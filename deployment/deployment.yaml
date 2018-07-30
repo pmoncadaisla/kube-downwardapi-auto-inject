@@ -1,22 +1,22 @@
 apiVersion: extensions/v1beta1
 kind: Deployment
 metadata:
-  name: sidecar-injector-webhook-deployment
+  name: downwardapi-injector-webhook-deployment
   labels:
-    app: sidecar-injector
+    app: downwardapi-injector
 spec:
   replicas: 1
   template:
     metadata:
       labels:
-        app: sidecar-injector
+        app: downwardapi-injector
     spec:
       containers:
-        - name: sidecar-injector
-          image: morvencao/sidecar-injector:v1
-          imagePullPolicy: IfNotPresent
+        - name: downwardapi-injector
+          image: pmoncadaisla/downwardapi-injector:latest
+          imagePullPolicy: Always
           args:
-            - -sidecarCfgFile=/etc/webhook/config/sidecarconfig.yaml
+            - -downwardapiCfgFile=/etc/webhook/config/downwardapiconfig.yaml
             - -tlsCertFile=/etc/webhook/certs/cert.pem
             - -tlsKeyFile=/etc/webhook/certs/key.pem
             - -alsologtostderr
@@ -31,7 +31,7 @@ spec:
       volumes:
         - name: webhook-certs
           secret:
-            secretName: sidecar-injector-webhook-certs
+            secretName: downwardapi-injector-webhook-certs
         - name: webhook-config
           configMap:
-            name: sidecar-injector-webhook-configmap
+            name: downwardapi-injector-webhook-configmap

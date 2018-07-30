@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/ghodss/yaml"
@@ -28,32 +29,38 @@ var (
 	defaulter = runtime.ObjectDefaulter(runtimeScheme)
 )
 
-var ignoredNamespaces = []string {
+var ignoredNamespaces = []string{
 	metav1.NamespaceSystem,
 	metav1.NamespacePublic,
 }
 
 const (
-	admissionWebhookAnnotationInjectKey = "sidecar-injector-webhook.morven.me/inject"
-	admissionWebhookAnnotationStatusKey = "sidecar-injector-webhook.morven.me/status"
+	admissionWebhookAnnotationInjectKey = "downwardapi.injector/inject"
+	admissionWebhookAnnotationStatusKey = "downwardapi.injector/status"
 )
 
 type WebhookServer struct {
-	sidecarConfig    *Config
-	server           *http.Server
+	downwardapiConfig *Config
+	server            *http.Server
 }
 
 // Webhook Server parameters
 type WhSvrParameters struct {
-	port int                 // webhook server port
-	certFile string          // path to the x509 certificate for https
-	keyFile string           // path to the x509 private key matching `CertFile`
-	sidecarCfgFile string    // path to sidecar injector configuration file
+	port               int    // webhook server port
+	certFile           string // path to the x509 certificate for https
+	keyFile            string // path to the x509 private key matching `CertFile`
+	downwardapiCfgFile string // path to sidecar injector configuration file
+}
+
+type Container struct {
+	corev1.Container
 }
 
 type Config struct {
-	Containers  []corev1.Container  `yaml:"containers"`
-	Volumes     []corev1.Volume     `yaml:"volumes"`
+	Containers   []corev1.Container   `yaml:"containers"`
+	VolumeMounts []corev1.VolumeMount `yaml:"volumemounts"`
+	Volumes      []corev1.Volume      `yaml:"volumes"`
+	Env          []corev1.EnvVar      `yaml:"env"`
 }
 
 type patchOperation struct {
@@ -72,10 +79,10 @@ func init() {
 
 // (https://github.com/kubernetes/kubernetes/issues/57982)
 func applyDefaultsWorkaround(containers []corev1.Container, volumes []corev1.Volume) {
-	defaulter.Default(&corev1.Pod {
-		Spec: corev1.PodSpec {
-			Containers:     containers,
-			Volumes:        volumes,
+	defaulter.Default(&corev1.Pod{
+		Spec: corev1.PodSpec{
+			Containers: containers,
+			Volumes:    volumes,
 		},
 	})
 }
@@ -86,12 +93,12 @@ func loadConfig(configFile string) (*Config, error) {
 		return nil, err
 	}
 	glog.Infof("New configuration: sha256sum %x", sha256.Sum256(data))
-	
+
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
-	
+
 	return &cfg, nil
 }
 
@@ -111,11 +118,11 @@ func mutationRequired(ignoredList []string, metadata *metav1.ObjectMeta) bool {
 	}
 
 	status := annotations[admissionWebhookAnnotationStatusKey]
-	
+
 	// determine whether to perform mutation based on annotation for the target resource
 	var required bool
 	if strings.ToLower(status) == "injected" {
-		required = false;
+		required = false
 	} else {
 		switch strings.ToLower(annotations[admissionWebhookAnnotationInjectKey]) {
 		default:
@@ -124,50 +131,68 @@ func mutationRequired(ignoredList []string, metadata *metav1.ObjectMeta) bool {
 			required = true
 		}
 	}
-	
+
 	glog.Infof("Mutation policy for %v/%v: status: %q required:%v", metadata.Namespace, metadata.Name, status, required)
 	return required
 }
 
-func addContainer(target, added []corev1.Container, basePath string) (patch []patchOperation) {
-	first := len(target) == 0
-	var value interface{}
-	for _, add := range added {
-		value = add
-		path := basePath
-		if first {
-			first = false
-			value = []corev1.Container{add}
-		} else {
-			path = path + "/-"
+func addEnv(target []corev1.Container, added []corev1.EnvVar, basePath string) (patch []patchOperation) {
+
+	for index, container := range target {
+		path := basePath + "/" + strconv.Itoa(index) + "/env"
+
+		for _, envvar := range added {
+
+			// Set container name if is from type resourceFieldRef
+			if envvar.ValueFrom != nil && envvar.ValueFrom.ResourceFieldRef != nil {
+				envvar.ValueFrom.ResourceFieldRef.ContainerName = container.Name
+			}
+			container.Env = append(container.Env, envvar)
 		}
-		patch = append(patch, patchOperation {
+
+		patch = append(patch, patchOperation{
 			Op:    "add",
 			Path:  path,
-			Value: value,
+			Value: container.Env,
 		})
+
 	}
+
 	return patch
 }
 
-func addVolume(target, added []corev1.Volume, basePath string) (patch []patchOperation) {
-	first := len(target) == 0
-	var value interface{}
-	for _, add := range added {
-		value = add
-		path := basePath
-		if first {
-			first = false
-			value = []corev1.Volume{add}
-		} else {
-			path = path + "/-"
+func addVolumeMounts(target []corev1.Container, added []corev1.VolumeMount, basePath string) (patch []patchOperation) {
+
+	for index, container := range target {
+		path := basePath + "/" + strconv.Itoa(index) + "/volumeMounts"
+
+		for _, mount := range added {
+			container.VolumeMounts = append(container.VolumeMounts, mount)
 		}
-		patch = append(patch, patchOperation {
+
+		patch = append(patch, patchOperation{
 			Op:    "add",
 			Path:  path,
-			Value: value,
+			Value: container.VolumeMounts,
 		})
+
 	}
+
+	return patch
+}
+
+func addVolumes(target, added []corev1.Volume, basePath string) (patch []patchOperation) {
+
+	for _, volume := range added {
+		target = append(target, volume)
+	}
+
+	patch = append(patch, patchOperation{
+		Op:    "add",
+		Path:  basePath,
+		Value: target,
+	})
+
 	return patch
 }
 
@@ -175,7 +200,7 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 	for key, value := range added {
 		if target == nil || target[key] == "" {
 			target = map[string]string{}
-			patch = append(patch, patchOperation {
+			patch = append(patch, patchOperation{
 				Op:   "add",
 				Path: "/metadata/annotations",
 				Value: map[string]string{
@@ -183,7 +208,7 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 				},
 			})
 		} else {
-			patch = append(patch, patchOperation {
+			patch = append(patch, patchOperation{
 				Op:    "replace",
 				Path:  "/metadata/annotations/" + key,
 				Value: value,
@@ -196,9 +221,10 @@ func updateAnnotation(target map[string]string, added map[string]string) (patch 
 // create mutation patch for resoures
 func createPatch(pod *corev1.Pod, sidecarConfig *Config, annotations map[string]string) ([]byte, error) {
 	var patch []patchOperation
-	
-	patch = append(patch, addContainer(pod.Spec.Containers, sidecarConfig.Containers, "/spec/containers")...)
-	patch = append(patch, addVolume(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
+
+	patch = append(patch, addEnv(pod.Spec.Containers, sidecarConfig.Env, "/spec/containers")...)
+	patch = append(patch, addVolumeMounts(pod.Spec.Containers, sidecarConfig.VolumeMounts, "/spec/containers")...)
+	patch = append(patch, addVolumes(pod.Spec.Volumes, sidecarConfig.Volumes, "/spec/volumes")...)
 	patch = append(patch, updateAnnotation(pod.Annotations, annotations)...)
 
 	return json.Marshal(patch)
@@ -210,8 +236,8 @@ func (whsvr *WebhookServer) mutate(ar *v1beta1.AdmissionReview) *v1beta1.Admissi
 	var pod corev1.Pod
 	if err := json.Unmarshal(req.Object.Raw, &pod); err != nil {
 		glog.Errorf("Could not unmarshal raw object: %v", err)
-		return &v1beta1.AdmissionResponse {
-			Result: &metav1.Status {
+		return &v1beta1.AdmissionResponse{
+			Result: &metav1.Status{
 				Message: err.Error(),
 			},
 		}
@@ -219,29 +245,29 @@ func (whsvr *WebhookServer) mutate(ar *v1beta1.AdmissionReview) *v1beta1.Admissi
 
 	glog.Infof("AdmissionReview for Kind=%v, Namespace=%v Name=%v (%v) UID=%v patchOperation=%v UserInfo=%v",
 		req.Kind, req.Namespace, req.Name, pod.Name, req.UID, req.Operation, req.UserInfo)
-	
+
 	// determine whether to perform mutation
 	if !mutationRequired(ignoredNamespaces, &pod.ObjectMeta) {
 		glog.Infof("Skipping mutation for %s/%s due to policy check", pod.Namespace, pod.Name)
-		return &v1beta1.AdmissionResponse {
-			Allowed: true, 
+		return &v1beta1.AdmissionResponse{
+			Allowed: true,
 		}
 	}
-	
+
 	// Workaround: https://github.com/kubernetes/kubernetes/issues/57982
-	applyDefaultsWorkaround(whsvr.sidecarConfig.Containers, whsvr.sidecarConfig.Volumes)
+	applyDefaultsWorkaround(whsvr.downwardapiConfig.Containers, whsvr.downwardapiConfig.Volumes)
 	annotations := map[string]string{admissionWebhookAnnotationStatusKey: "injected"}
-	patchBytes, err := createPatch(&pod, whsvr.sidecarConfig, annotations)
+	patchBytes, err := createPatch(&pod, whsvr.downwardapiConfig, annotations)
 	if err != nil {
-		return &v1beta1.AdmissionResponse {
-			Result: &metav1.Status {
+		return &v1beta1.AdmissionResponse{
+			Result: &metav1.Status{
 				Message: err.Error(),
 			},
 		}
 	}
-	
+
 	glog.Infof("AdmissionResponse: patch=%v\n", string(patchBytes))
-	return &v1beta1.AdmissionResponse {
+	return &v1beta1.AdmissionResponse{
 		Allowed: true,
 		Patch:   patchBytes,
 		PatchType: func() *v1beta1.PatchType {
@@ -277,8 +303,8 @@ func (whsvr *WebhookServer) serve(w http.ResponseWriter, r *http.Request) {
 	ar := v1beta1.AdmissionReview{}
 	if _, _, err := deserializer.Decode(body, nil, &ar); err != nil {
 		glog.Errorf("Can't decode body: %v", err)
-		admissionResponse = &v1beta1.AdmissionResponse {
-			Result: &metav1.Status {
+		admissionResponse = &v1beta1.AdmissionResponse{
+			Result: &metav1.Status{
 				Message: err.Error(),
 			},
 		}

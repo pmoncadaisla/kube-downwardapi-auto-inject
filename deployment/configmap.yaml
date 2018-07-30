@@ -1,19 +1,65 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: sidecar-injector-webhook-configmap
+  name: downwardapi-injector-webhook-configmap
 data:
   sidecarconfig.yaml: |
-    containers:
-      - name: sidecar-nginx
-        image: nginx:1.12.2
-        imagePullPolicy: IfNotPresent
-        ports:
-          - containerPort: 80
-        volumeMounts:
-          - name: nginx-conf
-            mountPath: /etc/nginx
+    volumemounts:
+      - name: podinfo
+        readOnly: true
+        mountPath: /kubernetes
     volumes:
-      - name: nginx-conf
-        configMap:
-          name: nginx-configmap
+      - name: podinfo
+        downwardAPI:
+          items:
+            - path: "labels"
+              fieldRef:
+                fieldPath: metadata.labels
+            - path: "annotations"
+              fieldRef:
+                fieldPath: metadata.annotations
+    env:
+      - name: K8S_DWA_NODE_NAME
+        valueFrom:
+          fieldRef:
+              fieldPath: spec.nodeName
+      - name: K8S_DWA_NODE_IP
+        valueFrom:
+          fieldRef:
+              fieldPath: status.hostIP
+      - name: K8S_DWA_POD_NAME
+        valueFrom:
+          fieldRef:
+              fieldPath: metadata.name
+      - name: K8S_DWA_NAMESPACE
+        valueFrom:
+          fieldRef:
+              fieldPath: metadata.namespace
+      - name: K8S_DWA_POD_IP
+        valueFrom:
+          fieldRef:
+              fieldPath: status.podIP
+      - name: K8S_DWA_POD_UID
+        valueFrom:
+          fieldRef:
+              fieldPath: metadata.uid
+      - name: K8S_DWA_LIMITS_CPU
+        valueFrom:
+          resourceFieldRef:
+              resource: limits.cpu
+              containerName: pod_name
+      - name: K8S_DWA_LIMITS_MEMORY
+        valueFrom:
+          resourceFieldRef:
+              resource: limits.memory
+              containerName: pod_name
+      - name: K8S_DWA_REQUESTS_CPU
+        valueFrom:
+          resourceFieldRef:
+              resource: requests.cpu
+              containerName: pod_name
+      - name: K8S_DWA_REQUESTS_MEMORY
+        valueFrom:
+          resourceFieldRef:
+              resource: requests.memory
+              containerName: pod_name

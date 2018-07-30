@@ -1,6 +1,80 @@
 # Kubernetes Mutating Admission Webhook for sidecar injection
 
-This tutoral shows how to build and deploy a [MutatingAdmissionWebhook](https://kubernetes.io/docs/admin/admission-controllers/#mutatingadmissionwebhook-beta-in-19) that injects a nginx sidecar container into pod prior to persistence of the object.
+This project is strongly inspired in https://github.com/morvencao/kube-mutating-webhook-tutorial
+
+Inject POD information to contqainers using the [Kubernetes DownwardAPI](https://kubernetes.io/docs/tasks/inject-data-application/environment-variable-expose-pod-information/) automatically.
+
+
+It will inject:
+- Environment variables
+- Volumes
+
+Environment variables contain:
+```
+- name: K8S_DWA_NODE_NAME
+  valueFrom:
+    fieldRef:
+        fieldPath: spec.nodeName
+- name: K8S_DWA_NODE_IP
+  valueFrom:
+    fieldRef:
+        fieldPath: status.hostIP
+- name: K8S_DWA_POD_NAME
+  valueFrom:
+    fieldRef:
+        fieldPath: metadata.name
+- name: K8S_DWA_NAMESPACE
+  valueFrom:
+    fieldRef:
+        fieldPath: metadata.namespace
+- name: K8S_DWA_POD_IP
+  valueFrom:
+    fieldRef:
+        fieldPath: status.podIP
+- name: K8S_DWA_POD_UID
+  valueFrom:
+    fieldRef:
+        fieldPath: metadata.uid
+- name: K8S_DWA_LIMITS_CPU
+  valueFrom:
+    resourceFieldRef:
+        resource: limits.cpu
+        containerName: pod_name
+- name: K8S_DWA_LIMITS_MEMORY
+  valueFrom:
+    resourceFieldRef:
+        resource: limits.memory
+        containerName: pod_name
+- name: K8S_DWA_REQUESTS_CPU
+  valueFrom:
+    resourceFieldRef:
+        resource: requests.cpu
+        containerName: pod_name
+- name: K8S_DWA_REQUESTS_MEMORY
+  valueFrom:
+    resourceFieldRef:
+        resource: requests.memory
+        containerName: pod_name
+```
+
+And `labels` and `annotations` are accesible though volume:
+```
+volumemounts:
+  - name: podinfo
+    readOnly: true
+    mountPath: /kubernetes
+volumes:
+  - name: podinfo
+    downwardAPI:
+      items:
+        - path: "labels"
+          fieldRef:
+            fieldPath: metadata.labels
+        - path: "annotations"
+          fieldRef:
+            fieldPath: metadata.annotations
+```
+
 
 ## Prerequisites
 
@@ -30,14 +104,14 @@ go get -u github.com/golang/dep/cmd/dep
 ./build
 ```
 
-## Deploy
+## Deploy adminssion controller
 
 1. Create a signed cert/key pair and store it in a Kubernetes `secret` that will be consumed by sidecar deployment
 ```
-./install/kubernetes/webhook-create-signed-cert.sh \
+./deploy/webhook-create-signed-cert.sh \
     --service sidecar-injector-webhook-svc \
     --secret sidecar-injector-webhook-certs \
-    --namespace default
+    --namespace kube-system
 ```
 
 2. Patch the `MutatingWebhookConfiguration` by set `caBundle` with correct value from Kubernetes cluster
@@ -49,36 +123,29 @@ cat deployment/mutatingwebhook.yaml | \
 
 3. Deploy resources
 ```
-kubectl create -f deployment/nginxconfigmap.yaml
-kubectl create -f deployment/configmap.yaml
-kubectl create -f deployment/deployment.yaml
-kubectl create -f deployment/service.yaml
-kubectl create -f deployment/mutatingwebhook-ca-bundle.yaml
+kubectl apply -f deployment/nginxconfigmap.yaml
+kubectl apply -f deployment/configmap.yaml
+kubectl apply -f deployment/deployment.yaml
+kubectl apply -f deployment/service.yaml
+kubectl apply -f deployment/mutatingwebhook-ca-bundle.yaml
 ```
 
-## Verify
-
-1. The sidecar inject webhook should be running
+It will watch for all resources created in all namespaces.
+If you want to restrict the namespaces where it applies, modified the expression at `deployment/mutatingwebhook.yaml`:
 ```
-[root@mstnode ~]# kubectl get pods
-NAME                                                  READY     STATUS    RESTARTS   AGE
-sidecar-injector-webhook-deployment-bbb689d69-882dd   1/1       Running   0          5m
-[root@mstnode ~]# kubectl get deployment
-NAME                                  DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
-sidecar-injector-webhook-deployment   1         1         1            1           5m
+namespaceSelector:
+      matchExpressions:
+        - key: downwardapi-injector-disabled
+          operator: DoesNotExist
 ```
 
-2. Label the default namespace with `sidecar-injector=enabled`
-```
-kubectl label namespace default sidecar-injector=enabled
-[root@mstnode ~]# kubectl get namespace -L sidecar-injector
-NAME          STATUS    AGE       SIDECAR-INJECTOR
-default       Active    18h       enabled
-kube-public   Active    18h
-kube-system   Active    18h
-```
+or add label `downwardapi-injector-disabled=yes' to those namespaces you want to exlcude from the webhook.
 
-3. Deploy an app in Kubernetes cluster, take `sleep` app as an example
+## Deploy your apps
+
+You will have to add the annotation `downwardapi.injector/inject=yes` in those resources where you want the Downward information is injected.
+
+Deploy an app in Kubernetes cluster, take `sleep` app as an example
 ```
 [root@mstnode ~]# cat <<EOF | kubectl create -f -
 apiVersion: extensions/v1beta1
@@ -90,7 +157,7 @@ spec:
   template:
     metadata:
       annotations:
-        sidecar-injector-webhook.morven.me/inject: "yes"
+        downwardapi.injector/inject: "yes"
       labels:
         app: sleep
     spec:
@@ -100,11 +167,4 @@ spec:
         command: ["/bin/sleep","infinity"]
         imagePullPolicy: 
 EOF
-```
-
-4. Verify sidecar container injected
-```
-[root@mstnode ~]# kubectl get pods
-NAME                     READY     STATUS        RESTARTS   AGE
-sleep-5c55f85f5c-tn2cs   2/2       Running       0          1m
 ```

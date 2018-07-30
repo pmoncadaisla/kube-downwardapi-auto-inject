@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: sidecar-injector-webhook-svc
+  name: downwardapi-injector-webhook-svc
   labels:
-    app: sidecar-injector
+    app: downwardapi-injector
 spec:
   ports:
   - port: 443
     targetPort: 443
   selector:
-    app: sidecar-injector
+    app: downwardapi-injector
