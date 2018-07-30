@@ -4,7 +4,7 @@ metadata:
   name: downwardapi-injector-webhook-configmap
   namespace: kube-system
 data:
-  sidecarconfig.yaml: |
+  downwardapiconfig.yaml: |
     volumemounts:
       - name: podinfo
         readOnly: true
