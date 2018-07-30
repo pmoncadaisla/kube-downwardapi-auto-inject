@@ -167,3 +167,98 @@ spec:
         imagePullPolicy: 
 EOF
 ```
+
+And the resulted pod will be:
+```
+[root@pmoncadaisla ~]# kubectl get pod sleep-6c597fd687-m4smr -o yaml --export=true
+apiVersion: v1
+kind: Pod
+metadata:
+  annotations:
+    downwardapi.injector.k8s.yoigo.com/inject: "yes"
+    downwardapi.injector.k8s.yoigo.com/status: injected
+  labels:
+    app: sleep
+spec:
+  containers:
+  - command:
+    - /bin/sleep
+    - infinity
+    env:
+    - name: FIRST_KEY
+      value: val
+    - name: K8S_DWA_NODE_NAME
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: spec.nodeName
+    - name: K8S_DWA_NODE_IP
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: status.hostIP
+    - name: K8S_DWA_POD_NAME
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.name
+    - name: K8S_DWA_NAMESPACE
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.namespace
+    - name: K8S_DWA_POD_IP
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: status.podIP
+    - name: K8S_DWA_POD_UID
+      valueFrom:
+        fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.uid
+    - name: K8S_DWA_LIMITS_CPU
+      valueFrom:
+        resourceFieldRef:
+          containerName: sleep
+          divisor: "0"
+          resource: limits.cpu
+    - name: K8S_DWA_LIMITS_MEMORY
+      valueFrom:
+        resourceFieldRef:
+          containerName: sleep
+          divisor: "0"
+          resource: limits.memory
+    - name: K8S_DWA_REQUESTS_CPU
+      valueFrom:
+        resourceFieldRef:
+          containerName: sleep
+          divisor: "0"
+          resource: requests.cpu
+    - name: K8S_DWA_REQUESTS_MEMORY
+      valueFrom:
+        resourceFieldRef:
+          containerName: sleep
+          divisor: "0"
+          resource: requests.memory
+    image: tutum/curl
+    imagePullPolicy: Always
+    name: sleep
+    volumeMounts:
+    - mountPath: /kubernetes
+      name: podinfo
+      readOnly: true
+  volumes:
+  - downwardAPI:
+      defaultMode: 420
+      items:
+      - fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.labels
+        path: labels
+      - fieldRef:
+          apiVersion: v1
+          fieldPath: metadata.annotations
+        path: annotations
+    name: podinfo
+```
