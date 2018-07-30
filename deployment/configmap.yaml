@@ -2,6 +2,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: downwardapi-injector-webhook-configmap
+  namespace: kube-system
 data:
   sidecarconfig.yaml: |
     volumemounts:
