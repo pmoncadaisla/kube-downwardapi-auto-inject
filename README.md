@@ -262,3 +262,7 @@ spec:
         path: annotations
     name: podinfo
 ```
+
+## Customization
+
+You can customize the name of the environment variables and the volumes by editing the `deployment/configmap.yaml` file.
