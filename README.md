@@ -123,7 +123,6 @@ cat deployment/mutatingwebhook.yaml | \
 
 3. Deploy resources
 ```
-kubectl apply -f deployment/nginxconfigmap.yaml
 kubectl apply -f deployment/configmap.yaml
 kubectl apply -f deployment/deployment.yaml
 kubectl apply -f deployment/service.yaml
